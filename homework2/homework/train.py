@@ -46,9 +46,11 @@ def train(
     # create loss function and optimizer
     loss_func = ClassificationLoss()
     # optimizer = ...
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=3e-4)
 
     global_step = 0
     metrics = {"train_acc": [], "val_acc": []}
+    best_val_acc = 0.0
 
     # training loop
     for epoch in range(num_epoch):
@@ -62,8 +64,15 @@ def train(
             img, label = img.to(device), label.to(device)
 
             # TODO: implement training step
-            raise NotImplementedError("Training step not implemented")
+            optimizer.zero_grad()
+            logits = model(img)
+            loss = loss_func(logits, label)
+            loss.backward()
+            optimizer.step()
 
+            prediction = logits.argmax(dim=1)
+            train_acc = (prediction==label).float().mean()
+            metrics["train_acc"].append(train_acc.item())
             global_step += 1
 
         # disable gradient computation and switch to evaluation mode
@@ -74,14 +83,31 @@ def train(
                 img, label = img.to(device), label.to(device)
 
                 # TODO: compute validation accuracy
-                raise NotImplementedError("Validation accuracy not implemented")
+                logits = model(img)
+                prediction = logits.argmax(dim=1)
+                val_acc = (prediction==label).float().mean()
+                metrics["val_acc"].append(val_acc.item())
 
         # log average train and val accuracy to tensorboard
         epoch_train_acc = torch.as_tensor(metrics["train_acc"]).mean()
         epoch_val_acc = torch.as_tensor(metrics["val_acc"]).mean()
 
-        raise NotImplementedError("Logging not implemented")
+        logger.add_scalar('train_accuracy', epoch_train_acc, epoch)
+        logger.add_scalar("val_accuracy", epoch_val_acc, epoch)
 
+        logger.add_scalar('hyperparams/lr', lr, epoch)
+        logger.add_scalar('hyperparams/weight_decay', 1e-4, epoch)
+
+        gap = epoch_train_acc - epoch_val_acc
+        logger.add_scalar('train_val_gap', gap, epoch)
+
+        if epoch_val_acc > best_val_acc:
+            best_val_acc = epoch_val_acc
+            model.eval()
+            save_model(model)
+            print(f"New best model saved: val_acc={best_val_acc:.4f}")
+            model.train()
+            
         # print on first, last, every 10th epoch
         if epoch == 0 or epoch == num_epoch - 1 or (epoch + 1) % 10 == 0:
             print(
@@ -91,8 +117,8 @@ def train(
             )
 
     # save and overwrite the model in the root directory for grading
+    model.eval()
     save_model(model)
-
     # save a copy of model weights in the log directory
     torch.save(model.state_dict(), log_dir / f"{model_name}.th")
     print(f"Model saved to {log_dir / f'{model_name}.th'}")

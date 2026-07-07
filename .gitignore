@@ -22,3 +22,8 @@ venv/
 
 *.zip
 .claude
+
+**/classification_data/
+**/drive_data/
+
+**/logs/
